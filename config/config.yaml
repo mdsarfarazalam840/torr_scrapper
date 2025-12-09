@@ -1,0 +1,42 @@
+# qBittorrent Web UI Configuration
+qbittorrent:
+  host: localhost
+  port: 8080
+  username: admin
+  password: adminadmin
+
+# Directory Paths
+paths:
+  download_dir: "D:/Volume E/Downloads"
+  archive_dir: "D:/Volume E/Downloads/Archivers"
+  temp_dir: "D:/Volume E/Downloads/temp"
+
+# RAR Archive Settings
+rar:
+  # WinRAR path - will try 7-Zip if WinRAR not found
+  winrar_path: "C:/Program Files/WinRAR/WinRAR.exe"
+  sevenzip_path: "C:/Program Files/7-Zip/7z.exe"
+  compression_level: 3  # 0-5 (0=store, 3=normal, 5=maximum)
+  create_solid_archive: false
+  delete_after_archive: false  # Delete original files after successful archiving
+
+# Google Drive Settings
+drive:
+  default_folder: "Torrents"
+  browser: "edge"  # edge, chrome, or firefox
+  upload_timeout: 3600  # seconds to wait for upload completion
+  create_folder_if_missing: true
+
+# Monitoring Settings
+monitoring:
+  poll_interval: 5  # seconds between status checks
+  show_detailed_progress: true
+  log_to_file: true
+
+# Web Scraping Settings
+scraper:
+  base_url: "https://1337x.to"
+  timeout: 30  # request timeout in seconds
+  max_retries: 3
+  results_per_page: 20
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
