@@ -150,4 +150,3 @@ We have extensively battle-tested this script. Here is a history of resolved iss
 
 ---
 
-*Verified for Production Use - Dec 2025*
