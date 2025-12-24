@@ -10,3 +10,6 @@ qbittorrent-api>=2024.1.0
 PyYAML>=6.0
 colorama>=0.4.6
 tqdm>=4.66.0
+google-auth>=2.25.0
+google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.110.0

@@ -35,10 +35,25 @@ class Archiver:
     
     def _detect_archiver(self):
         """Detect which archiver is available."""
-        # Try WinRAR first
-        if self.winrar_path and os.path.exists(self.winrar_path):
+        # Try WinRAR command-line (Rar.exe) first - more reliable than WinRAR.exe for scripts
+        rar_cli_path = r"C:\Program Files\WinRAR\Rar.exe"
+        if os.path.exists(rar_cli_path):
+            self.winrar_path = rar_cli_path
             self.archiver_type = 'winrar'
-            logger.info(f"Using WinRAR: {self.winrar_path}")
+            logger.info(f"Using WinRAR command-line: {rar_cli_path}")
+            return
+        
+        # Try WinRAR GUI if provided
+        if self.winrar_path and os.path.exists(self.winrar_path):
+            # If it's WinRAR.exe, try to use Rar.exe instead
+            if "WinRAR.exe" in self.winrar_path:
+                rar_path = self.winrar_path.replace("WinRAR.exe", "Rar.exe")
+                if os.path.exists(rar_path):
+                    self.winrar_path = rar_path
+                    logger.info(f"Using WinRAR command-line: {rar_path}")
+                else:
+                    logger.info(f"Using WinRAR GUI: {self.winrar_path}")
+            self.archiver_type = 'winrar'
             return
         
         # Try 7-Zip
@@ -48,13 +63,26 @@ class Archiver:
             return
         
         # Try common installation paths
+        common_rar_cli = r"C:\Program Files\WinRAR\Rar.exe"
         common_winrar = r"C:\Program Files\WinRAR\WinRAR.exe"
         common_7zip = r"C:\Program Files\7-Zip\7z.exe"
         
-        if os.path.exists(common_winrar):
-            self.winrar_path = common_winrar
+        if os.path.exists(common_rar_cli):
+            self.winrar_path = common_rar_cli
             self.archiver_type = 'winrar'
-            logger.info(f"Found WinRAR: {common_winrar}")
+            logger.info(f"Found WinRAR CLI: {common_rar_cli}")
+            return
+        
+        if os.path.exists(common_winrar):
+            # Try to use Rar.exe instead
+            rar_path = common_winrar.replace("WinRAR.exe", "Rar.exe")
+            if os.path.exists(rar_path):
+                self.winrar_path = rar_path
+                logger.info(f"Found WinRAR CLI: {rar_path}")
+            else:
+                self.winrar_path = common_winrar
+                logger.info(f"Found WinRAR: {common_winrar}")
+            self.archiver_type = 'winrar'
             return
         
         if os.path.exists(common_7zip):

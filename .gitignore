@@ -51,9 +51,23 @@ archives/
 # Selenium
 geckodriver.log
 
-test_*.py
-test_*.txt
+# test_*.py
+# test_*.txt
 
+# debug*.txt
+# debug*.py
+# debug*.html
+
+config/credentials.json
+debug*.html
 debug*.txt
 debug*.py
-debug*.html
+test*.py
+test*.txt
+
+tests
+utils/__pycache__
+
+modules/__pycache__
+
+

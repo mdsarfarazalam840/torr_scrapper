@@ -1,7 +1,7 @@
 # qBittorrent Web UI Configuration
 qbittorrent:
   host: localhost
-  port: 8080
+  port: 8081
   username: admin
   password: adminadmin
 
@@ -20,12 +20,13 @@ rar:
   create_solid_archive: false
   delete_after_archive: false  # Delete original files after successful archiving
 
-# Google Drive Settings
+# Google Drive Settings (API-based)
 drive:
+  credentials_file: "config/credentials.json"  # OAuth credentials from Google Cloud Console
+  token_file: "config/token.pickle"  # Saved authentication token (auto-created)
   default_folder: "Torrents"
-  browser: "edge"  # edge, chrome, or firefox
-  upload_timeout: 3600  # seconds to wait for upload completion
-  create_folder_if_missing: true
+  upload_timeout: 3600  # Max seconds for upload (API handles large files)
+
 
 # Monitoring Settings
 monitoring:
@@ -36,7 +37,10 @@ monitoring:
 # Web Scraping Settings
 scraper:
   base_url: "https://1337x.to"
+  browser: "chrome"  # chrome, edge, or firefox
+  headless: true  # Run browser invisibly in background (no visible windows)
   timeout: 30  # request timeout in seconds
   max_retries: 3
   results_per_page: 20
   user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+

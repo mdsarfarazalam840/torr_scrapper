@@ -184,7 +184,66 @@ class QBittorrentClient:
             return None
         
         import os
-        return os.path.join(info['save_path'], info['name'])
+        import glob
+        
+        # First try the exact path from qBittorrent
+        exact_path = os.path.join(info['save_path'], info['name'])
+        
+        if os.path.exists(exact_path):
+            logger.debug(f"Found exact path: {exact_path}")
+            return exact_path
+        
+        # If exact path doesn't exist, search for similar folders
+        logger.warning(f"Exact path not found: {exact_path}")
+        logger.info("Searching for actual download folder...")
+        
+        save_path = info['save_path']
+        torrent_name = info['name']
+        
+        # List all items in the save directory
+        if os.path.exists(save_path):
+            items = os.listdir(save_path)
+            logger.debug(f"Items in {save_path}: {items}")
+            
+            # Try to find a folder that matches the torrent name (case-insensitive, partial match)
+            # Clean the torrent name by removing/normalizing special characters
+            torrent_name_clean = torrent_name.replace('[', '').replace(']', '').lower()
+            
+            best_match = None
+            best_match_score = 0
+            
+            for item in items:
+                item_path = os.path.join(save_path, item)
+                item_clean = item.replace('[', '').replace(']', '').lower()
+                
+                # Calculate match score (how many words match)
+                torrent_words = set(torrent_name_clean.split())
+                item_words = set(item_clean.split())
+                
+                if len(torrent_words) > 0:
+                    match_score = len(torrent_words & item_words) / len(torrent_words)
+                    
+                    if match_score > best_match_score and match_score > 0.5:  # At least 50% word match
+                        best_match_score = match_score
+                        best_match = item_path
+            
+            if best_match:
+                logger.info(f"Found likely match: {best_match} (match score: {best_match_score:.0%})")
+                return best_match
+            
+            # If still not found, return the most recently modified item in the directory
+            # This is likely the just-downloaded torrent
+            if items:
+                latest_item = max(
+                    [os.path.join(save_path, item) for item in items],
+                    key=os.path.getmtime
+                )
+                logger.warning(f"Using most recent item: {latest_item}")
+                return latest_item
+        
+        # Fallback to the original path even if it doesn't exist
+        logger.error(f"Could not find download path, returning reported path: {exact_path}")
+        return exact_path
     
     def pause_torrent(self, torrent_hash: str) -> bool:
         """Pause a torrent."""

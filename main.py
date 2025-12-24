@@ -12,10 +12,18 @@ Author: Automation System
 
 import os
 import sys
-from colorama import Fore, Style, init
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Check and install dependencies before importing modules
+from check_dependencies import check_and_install_requirements
+if not check_and_install_requirements():
+    print("\n❌ Failed to install required dependencies.")
+    print("Please run: pip install -r requirements.txt")
+    sys.exit(1)
+
+from colorama import Fore, Style, init
 
 from modules.scraper import TorrentScraper
 from modules.qbittorrent_client import QBittorrentClient
@@ -31,7 +39,7 @@ init(autoreset=True)
 class TorrentAutomation:
     """Main automation orchestrator."""
     
-    def __init__(self, config_path: str = 'config/config.yaml', website_url: str = None):
+    def __init__(self, config_path: str = 'config/config.yaml', website_url: str = None, browser: str = None, auto_mode: bool = False):
         """Initialize automation with configuration."""
         try:
             self.config = load_config(config_path)
@@ -40,8 +48,10 @@ class TorrentAutomation:
             logger.error(f"Failed to load configuration: {e}")
             sys.exit(1)
         
-        # Store website URL
+        # Store website URL, browser choice, and auto mode
         self.website_url = website_url
+        self.browser = browser
+        self.auto_mode = auto_mode
         
         # Initialize components
         self.scraper = None
@@ -58,11 +68,16 @@ class TorrentAutomation:
         scraper_config = self.config.get('scraper', {})
         # Use website_url if provided, otherwise use config
         base_url = self.website_url if self.website_url else scraper_config.get('base_url', 'https://x1337x.cc')
+        # Use browser choice if provided, otherwise use config
+        browser = self.browser if self.browser else scraper_config.get('browser', 'chrome')
+        
         self.scraper = TorrentScraper(
             base_url=base_url,
             timeout=scraper_config.get('timeout', 30),
             max_retries=scraper_config.get('max_retries', 3),
-            user_agent=scraper_config.get('user_agent')
+            user_agent=scraper_config.get('user_agent'),
+            browser=browser,
+            headless=scraper_config.get('headless', True)  # Run browser invisibly
         )
         
         # qBittorrent client
@@ -91,8 +106,10 @@ class TorrentAutomation:
         
         # Google Drive uploader
         drive_config = self.config.get('drive', {})
+        
         self.uploader = GoogleDriveUploader(
-            browser=drive_config.get('browser', 'edge'),
+            credentials_file=drive_config.get('credentials_file', 'config/credentials.json'),
+            token_file=drive_config.get('token_file', 'config/token.pickle'),
             upload_timeout=drive_config.get('upload_timeout', 3600)
         )
     
@@ -110,22 +127,119 @@ class TorrentAutomation:
         print(banner)
     
     def search_torrents(self):
-        """Interactive torrent search."""
-        print(f"\n{Fore.YELLOW}═══ SEARCH TORRENTS ═══{Style.RESET_ALL}\n")
+        """Interactive torrent discovery: Search or Browse Trending."""
+        print(f"\n{Fore.YELLOW}═══ TORRENT DISCOVERY ═══{Style.RESET_ALL}\n")
         
-        query = input(f"{Fore.GREEN}Enter search query: {Style.RESET_ALL}").strip()
+        # 1. Fetch and show categories (Dynamic)
+        try:
+            print(f"{Fore.CYAN}Fetching categories...{Style.RESET_ALL}")
+            categories = self.scraper.get_categories()
+            if not categories:
+                categories = ["Movies", "TV", "Games", "Music", "Apps", "Documentaries", "Other"]
+            
+            print(f"\n{Fore.CYAN}Step 1: Select Category{Style.RESET_ALL}")
+            print(f"  {Fore.GREEN}0. All Categories{Style.RESET_ALL}")
+            for i, cat in enumerate(categories, 1):
+                print(f"  {i}. {cat}")
+            
+            cat_choice = input(f"\n{Fore.GREEN}Select Category (0-{len(categories)}) [0]: {Style.RESET_ALL}").strip()
+            
+            selected_category = 'all'
+            category_name = "All Categories"
+            
+            if cat_choice and cat_choice.isdigit():
+                idx = int(cat_choice)
+                if 0 < idx <= len(categories):
+                    selected_category = categories[idx-1]
+                    category_name = selected_category
+            
+            print(f"\n{Fore.GREEN}✓ Category: {category_name}{Style.RESET_ALL}\n")
+            
+        except Exception as e:
+            logger.debug(f"Category selection error: {e}")
+            selected_category = 'all'
+            category_name = "All Categories"
         
-        if not query:
-            logger.error("Search query cannot be empty")
-            return None
+        # 2. Choose Mode: Search or Trending
+        print(f"{Fore.CYAN}Step 2: Choose Action{Style.RESET_ALL}")
+        print("  1. Search")
+        print(f"  2. Browse Trending/Top in {category_name}")
         
-        print(f"\n{Fore.CYAN}Searching {self.scraper.base_url} for: {query}{Style.RESET_ALL}\n")
+        action = input(f"\n{Fore.GREEN}Enter choice (1-2) [1]: {Style.RESET_ALL}").strip()
         
-        torrents = self.scraper.search_torrents(query)
+        torrents = []
+        
+        if action == '2':
+            # Browse Trending
+            print(f"\n{Fore.CYAN}Fetching trending torrents for {category_name}...{Style.RESET_ALL}\n")
+            torrents = self.scraper.get_trending(category=selected_category)
+        else:
+            # Search
+            query = input(f"\n{Fore.GREEN}Enter search query: {Style.RESET_ALL}").strip()
+            if not query:
+                logger.error("Search query cannot be empty")
+                return None
+            
+            print(f"\n{Fore.CYAN}Searching for: {query} (in {category_name}){Style.RESET_ALL}\n")
+            torrents = self.scraper.search_torrents(query, category=selected_category)
         
         if not torrents:
             logger.error("No torrents found")
             return None
+            
+        # 3. Filter Results (Client-side)
+        return self._filter_results(torrents)
+        
+    def _filter_results(self, torrents: list) -> list:
+        """Apply filters to search results."""
+        while True:
+            # Show summary
+            print(f"\n{Fore.CYAN}Found {len(torrents)} results.{Style.RESET_ALL}")
+            
+            print(f"{Fore.YELLOW}Step 3: Filter/Sort Results (Optional){Style.RESET_ALL}")
+            print("  0. Done (Show Results)")
+            print("  1. Sort by Seeds (High to Low)")
+            print("  2. Sort by Leechers (High to Low)")
+            print("  3. Sort by Size (High to Low)")
+            print("  4. Filter by Uploader")
+            
+            choice = input(f"\n{Fore.GREEN}Enter choice [0]: {Style.RESET_ALL}").strip()
+            
+            if not choice or choice == '0':
+                return torrents
+            
+            if choice == '1':
+                torrents.sort(key=lambda x: x.get('seeds', 0), reverse=True)
+                print(f"{Fore.GREEN}✓ Sorted by Seeds{Style.RESET_ALL}")
+            
+            elif choice == '2':
+                torrents.sort(key=lambda x: x.get('leeches', 0), reverse=True)
+                print(f"{Fore.GREEN}✓ Sorted by Leechers{Style.RESET_ALL}")
+                
+            elif choice == '3':
+                # Parse size string to bytes for sorting (rough approximation)
+                def parse_size(t):
+                    s = t.get('size', '0 B').upper()
+                    if 'GB' in s: return float(s.replace('GB', '').strip()) * 1024 * 1024 * 1024
+                    if 'MB' in s: return float(s.replace('MB', '').strip()) * 1024 * 1024
+                    if 'KB' in s: return float(s.replace('KB', '').strip()) * 1024
+                    return 0
+                torrents.sort(key=parse_size, reverse=True)
+                print(f"{Fore.GREEN}✓ Sorted by Size{Style.RESET_ALL}")
+                
+            elif choice == '4':
+                uploader = input(f"{Fore.GREEN}Enter uploader name to match: {Style.RESET_ALL}").lower().strip()
+                if uploader:
+                    filtered = [t for t in torrents if uploader in t.get('uploader', '').lower()]
+                    if filtered:
+                        torrents = filtered
+                        print(f"{Fore.GREEN}✓ Filtered to {len(torrents)} torrents by '{uploader}'{Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.RED}No matches found for uploader '{uploader}'{Style.RESET_ALL}")
+
+            # Display updated results immediately so user can see effect
+            if choice in ('1', '2', '3', '4'):
+                 self.display_results(torrents)
         
         return torrents
     
@@ -277,6 +391,85 @@ class TorrentAutomation:
         
         return success
     
+    def auto_download_first(self):
+        """Automatically download the first torrent from search results."""
+        self.print_banner()
+        
+        try:
+            # Step 1: Search torrents
+            torrents = self.search_torrents()
+            if not torrents:
+                return
+            
+            # Step 2: Display results
+            self.display_results(torrents)
+            
+            # Step 3: Automatically select the first torrent
+            selected = torrents[0]
+            print(f"\n{Fore.YELLOW}► Auto-selecting first result (newest):{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}  {selected['name']}{Style.RESET_ALL}\n")
+            
+            # Step 4: Show details and get magnet link
+            details = self.show_torrent_details(selected)
+            if not details:
+                return
+            
+            # Step 5: Download torrent automatically
+            downloaded_path = self.download_torrent(details['magnet_link'])
+            if not downloaded_path:
+                return
+            
+            # Success message
+            print(f"\n{Fore.GREEN}{'='*60}")
+            print(f"  ✓ AUTOMATIC DOWNLOAD COMPLETED SUCCESSFULLY!")
+            print(f"{'='*60}{Style.RESET_ALL}\n")
+            
+            print(f"{Fore.CYAN}Downloaded:{Style.RESET_ALL} {downloaded_path}\n")
+            
+            # Ask if user wants to archive and upload
+            archive_upload = input(f"{Fore.YELLOW}Would you like to archive and upload to Google Drive? (y/n): {Style.RESET_ALL}").strip().lower()
+            
+            if archive_upload == 'y':
+                # Step 6: Create archive
+                archive_path = self.create_archive(downloaded_path)
+                if not archive_path:
+                    return
+                
+                # Step 7: Upload to Google Drive
+                upload_success = self.upload_to_drive(archive_path)
+                
+                if upload_success:
+                    print(f"\n{Fore.GREEN}{'='*60}")
+                    print(f"  ✓ FULL AUTOMATION COMPLETED SUCCESSFULLY!")
+                    print(f"{'='*60}{Style.RESET_ALL}\n")
+                    
+                    print(f"{Fore.CYAN}Downloaded:{Style.RESET_ALL} {downloaded_path}")
+                    print(f"{Fore.CYAN}Archived:{Style.RESET_ALL} {archive_path}")
+                    print(f"{Fore.CYAN}Uploaded:{Style.RESET_ALL} Google Drive\n")
+        
+        except KeyboardInterrupt:
+            print(f"\n\n{Fore.YELLOW}Operation cancelled by user{Style.RESET_ALL}")
+        except Exception as e:
+            logger.error(f"Automation failed: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Cleanup
+            if self.uploader:
+                try:
+                    self.uploader.close()
+                except:
+                    pass
+            
+            if self.scraper:
+                try:
+                    self.scraper.close()
+                except OSError:
+                    # Suppress "The handle is invalid" error from undetected-chromedriver
+                    pass
+                except Exception as e:
+                    logger.debug(f"Scraper cleanup error (ignored): {e}")
+    
     def run(self):
         """Run the complete automation workflow."""
         self.print_banner()
@@ -340,7 +533,19 @@ class TorrentAutomation:
         finally:
             # Cleanup
             if self.uploader:
-                self.uploader.close()
+                try:
+                    self.uploader.close()
+                except:
+                    pass
+            
+            if self.scraper:
+                try:
+                    self.scraper.close()
+                except OSError:
+                    # Suppress "The handle is invalid" error from undetected-chromedriver
+                    pass
+                except Exception as e:
+                    logger.debug(f"Scraper cleanup error (ignored): {e}")
 
 def main():
     """Main entry point."""
@@ -374,9 +579,50 @@ def main():
     
     print(f"\n{Fore.GREEN}✓ Using website: {website_url}{Style.RESET_ALL}\n")
     
-    # Initialize automation with the provided website URL
-    automation = TorrentAutomation(website_url=website_url)
-    automation.run()
+    # Browser selection
+    print(f"{Fore.YELLOW}Select browser for automation:{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}Available browsers:{Style.RESET_ALL}")
+    print(f"  1. Chrome (recommended)")
+    print(f"  2. Edge")
+    print(f"  3. Firefox\n")
+    
+    browser_choice = input(f"{Fore.GREEN}Enter choice (1-3, or press Enter for Chrome): {Style.RESET_ALL}").strip()
+    
+    # Map choice to browser name
+    browser_map = {
+        '1': 'chrome',
+        '2': 'edge',
+        '3': 'firefox',
+        '': 'chrome'  # Default
+    }
+    
+    selected_browser = browser_map.get(browser_choice, 'chrome')
+    print(f"\n{Fore.GREEN}✓ Using browser: {selected_browser.title()}{Style.RESET_ALL}\n")
+    
+    # Mode selection
+    print(f"{Fore.YELLOW}Select operation mode:{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}Available modes:{Style.RESET_ALL}")
+    print(f"  1. Automatic (download first/newest result)")
+    print(f"  2. Manual (choose from list)\n")
+    
+    mode_choice = input(f"{Fore.GREEN}Enter choice (1-2, or press Enter for Automatic): {Style.RESET_ALL}").strip()
+    
+    auto_mode = mode_choice != '2'  # Default to automatic unless user chooses 2
+    
+    if auto_mode:
+        print(f"\n{Fore.GREEN}✓ Mode: Automatic (will download first/newest result){Style.RESET_ALL}\n")
+    else:
+        print(f"\n{Fore.GREEN}✓ Mode: Manual (you will select from list){Style.RESET_ALL}\n")
+    
+    # Initialize automation with the provided website URL and browser
+    automation = TorrentAutomation(website_url=website_url, browser=selected_browser, auto_mode=auto_mode)
+    
+    # Run the appropriate workflow
+    if auto_mode:
+        automation.auto_download_first()
+    else:
+        automation.run()
 
 if __name__ == "__main__":
     main()
+
