@@ -69,5 +69,7 @@ tests
 utils/__pycache__
 
 modules/__pycache__
+config/token.pickle
+
 
 
