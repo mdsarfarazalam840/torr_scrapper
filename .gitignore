@@ -62,4 +62,15 @@ config/credentials.json
 debug*.html
 debug*.txt
 debug*.py
-debug*.html
+
+
+test*.py
+test*.txt
+
+tests
+utils/__pycache__
+
+modules/__pycache__
+config/token.pickle
+
+
